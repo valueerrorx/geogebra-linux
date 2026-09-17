@@ -31,6 +31,8 @@
 
         <button style="float: right;" title="Prüfungsmodus" @click="activateKiosk(); " class="btn  d-inline btn-danger p-1 ms-2 mb-1 btn-sm"><img src="/src/assets/img/svg/shield-lock.svg" class="white" width="20" height="20" ></button>
 
+        <span v-if="ggbVersion" style="float: right; color: #000;" class="small mb-1 me-2 pt-1" title="GeoGebra Version">v{{ ggbVersion }}</span>
+
     </div>
     <!-- filelist end -->
     
@@ -101,6 +103,7 @@ export default {
             customClipboard: [],
             isClipboardVisible: false,
             kiosk: false,
+            ggbVersion: null,
 
             // ─── CSS-Injection ───────────────────────────────────────────
             // Hier CSS eintragen das in classic.html / suite.html injiziert werden soll.
@@ -207,6 +210,7 @@ export default {
                 "disableAutoScale": true,
                 "useBrowserForJS": false,
                 "appletOnLoad": () => {
+                    try { this.ggbVersion = window.ggbApplet.getVersion() } catch (e) {}
                     this.injectCSS()
                     const parseClientEvent = (event) => {
                         let e = event
