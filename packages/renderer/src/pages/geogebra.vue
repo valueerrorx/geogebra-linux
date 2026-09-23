@@ -288,13 +288,15 @@ export default {
             else {
                 this.$swal({
                     title: "Prüfungsmodus aktivieren",
+                    text: "Alle Dateien im Arbeitsverzeichnis und aktuelle Berechnungen werden gelöscht.",
                     showCancelButton: true,
                     confirmButtonText: 'Ok',
                     cancelButtonText: 'Abbrechen',
                  }).then((result) => {
                     if (result.isConfirmed) {
                         this.kiosk = true;
-                        ipcRenderer.invoke('kioskmode', true );
+                        window.ggbApplet?.reset()
+                        ipcRenderer.invoke('kioskmode', true ).then(() => this.loadFilelist());
                         document.getElementById("toolbar").style.backgroundColor = "#1a4b1c"
                         this.injectCSS()
                     }

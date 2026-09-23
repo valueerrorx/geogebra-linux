@@ -90,8 +90,8 @@ class WindowHandler {
     }
 
 
-    async blurevent() { 
-        log.info("windowhandler @ blurevent: student tried to leave exam window")
+    async blurevent() {
+        log.warn(`windowhandler @ blurevent: Versuch den Prüfungsmodus zu verlassen ohne ihn zu beenden, um ${new Date().toLocaleString()}`)
 
         this.mainwindow.moveTop();
         this.mainwindow.setKiosk(true);

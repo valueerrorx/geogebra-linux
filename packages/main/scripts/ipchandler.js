@@ -42,17 +42,30 @@ class IpcHandler {
         /**
          * Switch to kiosk
          */ 
-        ipcMain.handle('kioskmode', (event, state=true) => {   
-           
+        ipcMain.handle('kioskmode', (event, state=true) => {
+
             if (state) {
+                try {
+                    const workdir = this.config.workdirectory
+                    const files = fs.readdirSync(workdir, { withFileTypes: true })
+                        .filter(dirent => dirent.isFile() && dirent.name !== 'geogebra.log')
+                    const ggbCount = files.filter(dirent => path.extname(dirent.name).toLowerCase() === '.ggb').length
+                    log.info(`ipchandler @ kioskmode: workdirectory scan found ${files.length} file(s) to purge (${ggbCount} .ggb)`)
+                    files.forEach(dirent => fs.unlinkSync(path.join(workdir, dirent.name)))
+                    log.info(`ipchandler @ kioskmode: workdirectory purged (${files.length} file(s) deleted)`)
+                } catch (err) {
+                    log.error(`ipchandler @ kioskmode: purge failed: ${err}`)
+                }
                 this.WindowHandler.mainwindow.setKiosk(true);
-                this.WindowHandler.mainwindow.addListener('blur', () => this.WindowHandler.blurevent()) 
+                this.WindowHandler.mainwindow.addListener('blur', () => this.WindowHandler.blurevent())
                 this.WindowHandler.mainwindow.kiosk = true
+                log.info(`ipchandler @ kioskmode: Prüfungsmodus aktiviert um ${new Date().toLocaleString()}`)
             }
             else {
                 this.WindowHandler.mainwindow.setKiosk(false);
                 this.WindowHandler.mainwindow.removeAllListeners('blur')
                 this.WindowHandler.mainwindow.kiosk = false
+                log.info(`ipchandler @ kioskmode: Prüfungsmodus verlassen um ${new Date().toLocaleString()}`)
             }
         })
 
