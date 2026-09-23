@@ -106,6 +106,27 @@ class IpcHandler {
 
 
 
+        // Delete one .ggb file from the work directory after the renderer confirmed it.
+        ipcMain.handle('deleteGGB', (event, filename) => {
+            try {
+                const base = path.basename(String(filename ?? ''))
+                if (!base || base !== filename || path.extname(base).toLowerCase() !== '.ggb') {
+                    return { sender: 'client', message: 'Ungültiger Dateiname', status: 'error' }
+                }
+                const workdir = path.resolve(this.config.workdirectory)
+                const ggbFilePath = path.resolve(workdir, base)
+                if (path.dirname(ggbFilePath) !== workdir) {
+                    return { sender: 'client', message: 'Ungültiger Pfad', status: 'error' }
+                }
+                fs.unlinkSync(ggbFilePath)
+                log.info(`ipchandler @ deleteGGB: deleted ${base}`)
+                return { sender: 'client', message: 'Datei gelöscht', status: 'success' }
+            } catch (err) {
+                log.error(`ipchandler @ deleteGGB: ${err}`)
+                return { sender: 'client', message: String(err), status: 'error' }
+            }
+        })
+
         /**
          * load content from ggb file and send it to the frontend 
          * @param args contains an object { filename:`${this.clientname}.ggb` }

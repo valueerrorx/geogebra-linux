@@ -13,7 +13,8 @@
 
 
     <!-- filelist start - show local files from workfolder (pdf and gbb only)-->
-    <div id="toolbar" class="d-inline p-1 pb-0">  
+    <div id="toolbar" class="d-inline p-1 pb-0" style="position: relative;">
+        <span v-if="ggbPerspectiveName" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #000;" class="small" title="Aktuelle Perspektive">{{ ggbPerspectiveName }}</span>
         <button title="backup" @click="saveContent(true); " class="btn  d-inline btn-success p-1 ms-2 mb-1 btn-sm"><img src="/src/assets/img/svg/document-save.svg" class="white" width="20" height="20" ></button>
         <button title="delete" @click="clearAll(); " class="btn  d-inline btn-secondary p-1 ms-2 mb-1 btn-sm"><img src="/src/assets/img/svg/edit-delete.svg" class="white" width="20" height="20" ></button>
         <button title="paste" @click="showClipboard(); " class="btn  d-inline btn-secondary p-1 ms-2 mb-1 btn-sm"><img src="/src/assets/img/svg/edit-paste-style.svg" class="white" width="20" height="20" ></button>
@@ -24,8 +25,11 @@
             <div class="btn btn-outline-info btn-sm  mb-1" @click="setsource('classic')"> <img src="/src/assets/img/svg/formula.svg" class="" width="20" height="20" >classic</div>
         </div>
         
-        <div v-for="file in localfiles" class="d-inline">
-            <div v-if="(file.type == 'ggb')" class="btn btn-info ms-2 mb-1  btn-sm" @click="selectedFile=file.name; loadGGB(file.name)"><img src="/src/assets/img/svg/document-replace.svg" class="" width="20" height="20" > {{file.name}} </div>
+        <div v-for="file in localfiles" :key="file.name" class="d-inline">
+            <div v-if="file.type == 'ggb'" class="btn-group ms-2 mb-1">
+                <button type="button" class="btn btn-info btn-sm" @click="selectedFile=file.name; loadGGB(file.name)"><img src="/src/assets/img/svg/document-replace.svg" width="20" height="20" alt=""> {{ file.name }}</button>
+                <button type="button" class="btn btn-sm px-1 ggb-file-delete" title="Datei löschen" @click="deleteGGB(file.name)"><img src="/src/assets/img/svg/edit-delete.svg" width="16" height="16" alt=""></button>
+            </div>
         </div>
 
 
@@ -104,6 +108,8 @@ export default {
             isClipboardVisible: false,
             kiosk: false,
             ggbVersion: null,
+            ggbPerspectiveName: null,
+            kioskStartTime: null,
 
             // ─── CSS-Injection ───────────────────────────────────────────
             // Hier CSS eintragen das in classic.html / suite.html injiziert werden soll.
@@ -211,6 +217,7 @@ export default {
                 "useBrowserForJS": false,
                 "appletOnLoad": () => {
                     try { this.ggbVersion = window.ggbApplet.getVersion() } catch (e) {}
+                    this.updatePerspectiveName()
                     this.injectCSS()
                     const parseClientEvent = (event) => {
                         let e = event
@@ -229,6 +236,10 @@ export default {
                     window.ggbApplet.registerClientListener((event) => {
                         const ev = parseClientEvent(event)
                         if (!ev || !ev.type) return
+                        if (ev.type === 'perspectiveChange') {
+                            this.updatePerspectiveName()
+                            return
+                        }
                         if (ev.type === 'editorKeyTyped') {
                             this._ggbClipIgnoreSelectUntil = Date.now() + 550
                             return
@@ -281,9 +292,24 @@ export default {
                         const audio = new Audio("leave.oga");
                         audio.play()
                         this.injectCSS()
+                        document.getElementById("toolbar").style.backgroundColor = ""
+
+                        const start = this.kioskStartTime
+                        const end = new Date()
+                        const fmt = (d) => d.toLocaleString('de-AT')
+                        const durationMs = start ? (end.getTime() - start.getTime()) : 0
+                        const durationStr = this.formatDuration(durationMs)
+                        this.$swal.fire({
+                            title: "Prüfung beendet",
+                            html: `Betreten: ${start ? fmt(start) : '-'}<br>Verlassen: ${fmt(end)}<br>Dauer: ${durationStr}<br><br><b>Zeige diese Informationen deiner Lehrperson.</b>`,
+                            icon: "info",
+                            showCancelButton: false,
+                            confirmButtonText: 'Ok',
+                        })
+                        this.kioskStartTime = null
                     }
                     else {return; }
-                });  
+                });
             }
             else {
                 this.$swal({
@@ -295,15 +321,83 @@ export default {
                  }).then((result) => {
                     if (result.isConfirmed) {
                         this.kiosk = true;
+                        this.kioskStartTime = new Date()
                         window.ggbApplet?.reset()
                         ipcRenderer.invoke('kioskmode', true ).then(() => this.loadFilelist());
                         document.getElementById("toolbar").style.backgroundColor = "#1a4b1c"
                         this.injectCSS()
                     }
                     else {return; }
-                });  
+                });
 
             }
+        },
+
+        updatePerspectiveName() {
+            // subApp aus <geogebra app="suite" subApp="..."> ist die zuverlässige Quelle für
+            // den aktiven Suite-Modus - getPerspectiveXML() unterscheidet z.B. Grafikrechner
+            // und Geometrie nicht, da beide dieselbe Euclidian View (id=1) nutzen.
+            const subAppNames = {
+                graphing: 'Grafik',
+                geometry: 'Geometrie',
+                cas: 'CAS',
+                g3d: '3D-Grafik',
+                probability: 'Wahrscheinlichkeit',
+                scientific: 'Rechner',
+                suite: 'Suite',
+            }
+            try {
+                const xml = window.ggbApplet.getXML()
+                const match = xml.match(/<geogebra\b[^>]*\bsubApp="([^"]*)"/)
+                if (match) {
+                    this.ggbPerspectiveName = subAppNames[match[1]] || match[1]
+                    return
+                }
+            } catch (e) {}
+
+            // Fallback für GeoGebra Classic (kein subApp-Attribut, dafür echte Views)
+            try {
+                const xml = window.ggbApplet.getPerspectiveXML()
+                const doc = new DOMParser().parseFromString(xml, 'text/xml')
+                const visibleIds = Array.from(doc.querySelectorAll('view'))
+                    .filter(v => v.getAttribute('visible') === 'true')
+                    .map(v => v.getAttribute('id'))
+
+                const viewNames = {
+                    '1': 'Grafik',
+                    '2': 'Algebra',
+                    '4': 'Tabelle',
+                    '8': 'CAS',
+                    '16': 'Grafik 2',
+                    '64': 'Statistik',
+                    '512': '3D-Grafik',
+                    '70': 'Wahrscheinlichkeit',
+                    '4097': 'Datenanalyse',
+                }
+
+                if (visibleIds.includes('8')) this.ggbPerspectiveName = 'CAS'
+                else if (visibleIds.includes('70')) this.ggbPerspectiveName = 'Wahrscheinlichkeit'
+                else if (visibleIds.includes('512')) this.ggbPerspectiveName = '3D-Grafik'
+                else if (visibleIds.includes('64')) this.ggbPerspectiveName = 'Statistik'
+                else if (visibleIds.includes('4')) this.ggbPerspectiveName = 'Tabelle'
+                else if (visibleIds.includes('4097')) this.ggbPerspectiveName = 'Datenanalyse'
+                else if (visibleIds.includes('1')) {
+                    // Grafikrechner und Geometrie teilen sich dieselbe View (id=1) - der
+                    // Unterschied ist, ob die Algebra-View (id=2) mit sichtbar ist.
+                    this.ggbPerspectiveName = visibleIds.includes('2') ? 'Grafik' : 'Geometrie'
+                }
+                else this.ggbPerspectiveName = visibleIds.map(id => viewNames[id] || id).join(', ') || null
+            } catch (e) {
+                this.ggbPerspectiveName = null
+            }
+        },
+
+        formatDuration(ms) {
+            const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+            const h = Math.floor(totalSeconds / 3600)
+            const m = Math.floor((totalSeconds % 3600) / 60)
+            const s = totalSeconds % 60
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
         },
 
 
@@ -436,6 +530,22 @@ export default {
                 this.loadFilelist()
                 this.$swal.fire({ title: 'Gespeichert', text: filename, icon: 'info' })
             }
+        },
+
+        async deleteGGB(file) {
+            const result = await this.$swal({
+                title: 'Löschen',
+                html: `Datei <b>${file}</b> aus dem Arbeitsverzeichnis löschen?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Löschen',
+                cancelButtonText: 'Abbrechen',
+                reverseButtons: true,
+            })
+            if (!result.isConfirmed) return
+            const res = await ipcRenderer.invoke('deleteGGB', file)
+            if (res.status === 'success') this.loadFilelist()
+            else this.$swal.fire({ title: 'Error', text: res.message, icon: 'error' })
         },
 
         async loadGGB(file) {
@@ -644,5 +754,14 @@ export default {
     position: relative;
    
 
+}
+
+.ggb-file-delete,
+.ggb-file-delete:hover,
+.ggb-file-delete:focus,
+.ggb-file-delete:active {
+    background-color: #e9ecef;
+    border-color: #e9ecef;
+    box-shadow: none;
 }
 </style>
